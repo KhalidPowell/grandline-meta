@@ -16,10 +16,10 @@ description = "One Piece TCG metagame leaderboard — play rate and win rate fro
 # dataclass slots=True, both of which need 3.10/3.11.
 requires-python = ">=3.11"
 
-# Empty on purpose. Stage 1 is pure standard library — no third-party
-# code to install, review, or keep patched. This list grows in stage 2
-# (SQLAlchemy) and stage 4 (FastAPI, Jinja2).
-dependencies = []
+# Stage 1 was pure standard library. Stage 2 adds its first two
+# third-party packages: pydantic validates data at the source boundary
+# (RawMatch), SQLAlchemy maps it into the database (models.py, next).
+dependencies = ["pydantic>=2.0"]
 
 # --- Development-only dependencies -----------------------------------
 # Kept separate from `dependencies` so the deployed app never ships the
