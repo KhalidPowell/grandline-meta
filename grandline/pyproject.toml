@@ -1,0 +1,51 @@
+# WHAT THIS FILE DOES
+# The project's single config file. It tells Python how to install this
+# package, what it depends on, and how to run the tests.
+#
+# WHY IT EXISTS
+# pyproject.toml is the modern replacement for setup.py, requirements.txt
+# and pytest.ini all at once. One file, one place to look.
+
+# --- Package identity ------------------------------------------------
+[project]
+name = "grandline"
+version = "0.1.0"
+description = "One Piece TCG metagame leaderboard — play rate and win rate from ranked ladder data."
+
+# 3.11 is the floor because the code uses `X | None` type hints and
+# dataclass slots=True, both of which need 3.10/3.11.
+requires-python = ">=3.11"
+
+# Empty on purpose. Stage 1 is pure standard library — no third-party
+# code to install, review, or keep patched. This list grows in stage 2
+# (SQLAlchemy) and stage 4 (FastAPI, Jinja2).
+dependencies = []
+
+# --- Development-only dependencies -----------------------------------
+# Kept separate from `dependencies` so the deployed app never ships the
+# test framework. Install with:  pip install -e ".[dev]"
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+# --- Build configuration ---------------------------------------------
+# Standard boilerplate telling pip how to build the package. Hatchling
+# is a lightweight modern build backend; nothing here needs changing.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Points the builder at the src/ layout. Without this it would look for a
+# top-level `grandline/` folder and find nothing.
+[tool.hatch.build.targets.wheel]
+packages = ["src/grandline"]
+
+# --- Test runner configuration ---------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]      # where to look for tests
+pythonpath = ["src"]       # lets tests import grandline without installing
+addopts = "-v"             # verbose: print each test name and result
+
+# WHY THE src/ LAYOUT AT ALL:
+# Putting code in src/ instead of the project root means tests can only
+# import the package the same way a real user would. It catches "works on
+# my machine" packaging bugs before they ship.
