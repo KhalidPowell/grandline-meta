@@ -13,6 +13,7 @@ stage 5 without touching anything upstream (A1).
 """
 
 from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -24,26 +25,44 @@ class RawMatch(BaseModel):
     -- the pipeline, the database, grandline.stats -- should ever need to
     handle a malformed field. If a source hands us garbage, it fails
     here, loudly, at construction time, not three layers downstream.
-
-    TODO(you): replace every `___` below with the right type. Ask
-    yourself for each one: what's the narrowest type that's still true?
-    (e.g. is `winner` really any string, or only ever one of three?)
     """
 
-    # Filled in already, as a pattern to match: a stable id from the
-    # source's own system, so re-ingesting the same match is a no-op.
+    # A stable id from the source's own system, so re-ingesting the same
+    # match is a no-op rather than a duplicate row.
     external_id: str
 
-    played_at: ___          # TODO: a specific point in time -- what stdlib type is that?
+    # datetime, not str: "when" needs to support comparison (`since` in
+    # MatchSource.fetch) and arithmetic (season windows, the F4 freshness
+    # stamp). Pydantic parses ISO-8601 strings into this automatically,
+    # so a source handing us "2026-09-10T17:05:00Z" just works.
+    played_at: datetime
 
-    leader_a: ___            # TODO: leader identifier, e.g. "OP11-001"
-    leader_b: ___
+    # Plain str. There's no fixed, known-in-advance set of leader codes
+    # to enumerate -- new leaders release every set -- so unlike
+    # `winner` below, a closed type would be actively wrong here.
+    leader_a: str
+    leader_b: str
 
-    winner: ___               # TODO: only ever "a", "b", or "draw" -- is `str` the best fit?
+    # Literal, not str: `winner` only ever takes one of three exact
+    # values. `str` would accept "yes", "Player A", or a typo like "a "
+    # and only fail later, deep in stats, in a confusing way. Literal
+    # makes the invalid states unrepresentable -- pydantic rejects
+    # anything outside the set right here, at construction.
+    winner: Literal["a", "b", "draw"]
 
-    on_the_play: ___          # TODO: only ever "a" or "b" -- same question as winner
+    # Same reasoning as `winner`, but only two values -- there's no
+    # "draw" for who went first.
+    on_the_play: Literal["a", "b"]
 
-    format_code: ___          # TODO: e.g. "OP17"
-    season: ___
+    # Plain str, same logic as leader codes: formats are an open,
+    # growing set ("OP17", "OP18", ...), not a fixed enum to check
+    # against in code that ships before the next set does.
+    format_code: str
+    season: str
 
-    payload: ___               # TODO: the untouched original JSON blob -- arbitrary shape
+    # dict[str, Any], not dict: this is the untouched original payload,
+    # by definition unknown shape -- it might be a Limitless JSON blob
+    # today and an OPBounty one after Q1 resolves. `Any` says "I'm not
+    # validating what's inside, on purpose," rather than silently
+    # assuming every value happens to be, say, a string.
+    payload: dict[str, Any]
