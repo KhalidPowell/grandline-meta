@@ -77,8 +77,8 @@ def wilson_interval(wins: int, games: int, z: float = Z_95) -> tuple[float, floa
 def interval_width(wins: int, games: int, z: float = Z_95) -> float:
     """How wide the interval is -- one number for "how unsure are we".
 
-    WHY: useful for sorting, or for flagging a leader that clears the
-    n>=100 gate but is still shaky.
+    WHY: useful for sorting, or for flagging a raw win rate built on so
+    few games that it is mostly noise.
     """
     low, high = wilson_interval(wins, games, z)
     return high - low

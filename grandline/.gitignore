@@ -1,0 +1,16 @@
+# Personal settings and data -- never committed.
+grandline.toml
+*.db
+*.db-wal
+*.db-shm
+grandline-watcher.log*
+
+# Real simulator logs contain other players' handles.
+Player*.log
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/

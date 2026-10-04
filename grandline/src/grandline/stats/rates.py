@@ -1,7 +1,14 @@
 """
 WHAT THIS FILE DOES
-Computes the four numbers on every leaderboard row: play rate, win rate,
-the 7-day change, and whether we have enough games to publish at all.
+Computes the numbers on every row: play rate, win rate and the 7-day
+change.
+
+THERE IS NO SAMPLE GATE (PRD D5, v2.2)
+v1 hid any win rate below 100 decided games. At personal volume -- five
+games against a leader, not five hundred -- that would blank almost every
+row. v2 always shows the raw win rate, with the raw record (e.g. 3-2)
+beside it so the sample size is never hidden. The Wilson interval is
+still computed for anyone who wants to see how uncertain it is.
 
 WHY IT EXISTS
 Three domain rules are easy to get backwards, and each one produces a
@@ -20,13 +27,6 @@ Pure functions only -- same as intervals.py. No database, no network.
 from dataclasses import dataclass
 
 from grandline.stats.intervals import Z_95, wilson_interval
-
-# The sample-size gate. Below this many decided games, feature F2 hides
-# the win rate entirely rather than showing a number we can't defend.
-# 100 is a judgement call: it puts the ± at roughly 10 points, which is
-# about the widest that is still worth reading.
-MIN_SAMPLE = 100
-
 
 def decided_games(games: int, draws: int = 0) -> int:
     """Games that actually produced a winner.
@@ -56,7 +56,8 @@ def win_rate(wins: int, games: int, draws: int = 0) -> float:
 
     CAREFUL: returns 0.0 when there are no decided games. That's
     convenient for rollup code but it's a trap -- 0.0 here means "no
-    data", NOT "never wins". Always gate display on has_min_sample().
+    data", NOT "never wins". With no sample gate (D5), a caller that
+    displays this must check for zero decided games first.
     """
     decided = decided_games(games, draws)
     if wins > decided:
@@ -113,19 +114,6 @@ def delta_points(current: float, previous: float) -> float:
     return (current - previous) * 100
 
 
-def has_min_sample(games: int, minimum: int = MIN_SAMPLE) -> bool:
-    """Whether a win rate is backed by enough games to publish.
-
-    WHY THIS FUNCTION EXISTS: it's feature F2 made real, and it's the
-    credibility of the whole product.
-
-    NOTE: a low-sample leader still appears on the leaderboard with its
-    play rate and game count -- it just shows no win rate. Hiding the row
-    entirely would understate how much of the format is fringe decks.
-    """
-    return games >= minimum
-
-
 @dataclass(frozen=True, slots=True)
 class RateSummary:
     """One leader's numbers for one time window -- a single leaderboard row.
@@ -146,11 +134,10 @@ class RateSummary:
     wins: int
     draws: int
     play_rate: float      # 0..1
-    win_rate: float       # 0..1 -- meaningless unless show_win_rate is True
+    win_rate: float       # 0..1, raw -- always shown (D5)
     ci_low: float         # lower confidence bound, 0..1
     ci_high: float        # upper confidence bound, 0..1
     delta_7d: float       # change vs previous window, in points
-    show_win_rate: bool   # False = below the sample gate, hide the rate
 
     @property
     def decided(self) -> int:
@@ -166,7 +153,6 @@ def summarize(
     draws: int = 0,
     previous_win_rate: float | None = None,
     z: float = Z_95,
-    minimum: int = MIN_SAMPLE,
 ) -> RateSummary:
     """Build one complete leaderboard row.
 
@@ -195,7 +181,4 @@ def summarize(
         delta_7d=(
             0.0 if previous_win_rate is None else delta_points(rate, previous_win_rate)
         ),
-        # Gate on DECIDED games, not total. 101 games with 2 draws is 99
-        # decided, which is below the bar.
-        show_win_rate=has_min_sample(decided, minimum),
     )
