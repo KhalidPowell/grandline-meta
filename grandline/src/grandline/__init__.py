@@ -9,9 +9,9 @@ on every single import of any submodule, which makes startup slow and
 import errors confusing. Real code lives in the subpackages.
 
 WHERE THE PROJECT IS
-Stage 1 of 6: only `grandline.stats` exists. There is no database, no data
-source, and no website yet. Coming next: `grandline.sources` (stage 2),
-`grandline.pipeline` (stage 3), `grandline.web` (stage 4).
+Stage 4 of 6 (PRD v2.2): `grandline.stats` (the maths) and
+`grandline.capture` (parser, SQLite store, live log watcher) exist. Coming
+next: a local page showing the record (stage 5).
 """
 
 # Single source of truth for the version. pyproject.toml carries its own

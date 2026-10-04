@@ -22,11 +22,9 @@ from grandline.stats.intervals import (
     wilson_interval,
 )
 from grandline.stats.rates import (
-    MIN_SAMPLE,
     RateSummary,
     decided_games,
     delta_points,
-    has_min_sample,
     play_rate,
     summarize,
     win_rate,
@@ -35,12 +33,10 @@ from grandline.stats.rates import (
 # The public surface of this layer. Sorted so additions are easy to spot
 # in a diff, and so `from grandline.stats import *` stays predictable.
 __all__ = [
-    "MIN_SAMPLE",
     "RateSummary",
     "Z_95",
     "decided_games",
     "delta_points",
-    "has_min_sample",
     "interval_width",
     "margin_of_error",
     "play_rate",

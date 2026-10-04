@@ -19,10 +19,8 @@ import dataclasses
 import pytest
 
 from grandline.stats.rates import (
-    MIN_SAMPLE,
     decided_games,
     delta_points,
-    has_min_sample,
     play_rate,
     summarize,
     win_rate,
@@ -77,7 +75,7 @@ def test_a_draw_is_not_a_loss():
 def test_win_rate_with_no_decided_games_returns_zero():
     # CHECKS: the no-data path doesn't divide by zero.
     # EXPECT: 0.0 -- which means "no data", NOT "never wins". Callers
-    # must gate on has_min_sample before showing this to anyone.
+    # must check for zero games before showing this to anyone.
     assert win_rate(0, 0) == 0.0
     assert win_rate(0, 5, draws=5) == 0.0
 
@@ -154,31 +152,14 @@ def test_delta_is_zero_for_no_movement():
     assert delta_points(0.5, 0.5) == pytest.approx(0.0)
 
 
-# --- has_min_sample --------------------------------------------------
-# Feature F2's gate.
-
-
-def test_sample_gate_is_inclusive_at_the_threshold():
-    # CHECKS: the boundary, where off-by-one errors live.
-    # EXPECT: exactly 100 games passes; 99 does not.
-    assert has_min_sample(MIN_SAMPLE) is True
-    assert has_min_sample(MIN_SAMPLE - 1) is False
-
-
-def test_sample_gate_threshold_is_overridable():
-    # CHECKS: the minimum is a parameter, not hard-wired.
-    # EXPECT: 50 games passes when the bar is lowered to 25.
-    assert has_min_sample(50, minimum=25) is True
-
-
 # --- summarize -------------------------------------------------------
 # The single entry point that builds a whole leaderboard row.
 
 
 def test_summarize_builds_a_complete_leaderboard_row():
     # CHECKS: all fields populate and agree with the individual functions.
-    # EXPECT: a healthy leader (2,651 games) shows its win rate, the rate
-    # sits inside its own confidence interval, and the delta is computed.
+    # EXPECT: the rate sits inside its own confidence interval, and the
+    # delta is computed.
     row = summarize(
         leader_code="OP11-001",
         appearances=2651,
@@ -193,27 +174,27 @@ def test_summarize_builds_a_complete_leaderboard_row():
     assert row.win_rate == pytest.approx(1373 / 2651)
     assert row.ci_low < row.win_rate < row.ci_high
     assert row.delta_7d == pytest.approx(delta_points(1373 / 2651, 0.504))
-    assert row.show_win_rate is True
 
 
-def test_summarize_suppresses_win_rate_below_the_gate():
-    # CHECKS: feature F2 in action on a brand-new fringe deck.
-    # EXPECT: show_win_rate is False at 74 games. The rate is still
-    # COMPUTED (so F5 and debugging can see it) -- it's just not fit to
-    # publish, and the template must respect the flag.
+def test_summarize_gives_a_raw_win_rate_at_any_sample_size():
+    # CHECKS: D5 (PRD v2.2) -- there is no minimum sample. Five games is
+    #         a personal-volume matchup, and it still gets a win rate.
+    # EXPECT: 3 wins from 5 -> exactly 60%, with a wide interval around it.
     row = summarize(
         leader_code="OP17-002",
-        appearances=74,
-        wins=55,
-        total_matches=9330,
+        appearances=5,
+        wins=3,
+        total_matches=40,
     )
-    assert row.show_win_rate is False
-    assert row.win_rate == pytest.approx(55 / 74)
+    assert row.win_rate == pytest.approx(0.6)
+    assert row.ci_low < 0.6 < row.ci_high
+    assert row.ci_high - row.ci_low > 0.5  # five games: very unsure, and it shows
+    assert not hasattr(row, "show_win_rate")
 
 
-def test_summarize_counts_draws_against_the_sample_gate():
-    # CHECKS: the gate uses DECIDED games, not total games played.
-    # EXPECT: 101 played with 2 draws = 99 decided -> below the bar.
+def test_summarize_win_rate_uses_decided_games():
+    # CHECKS: draws still leave the denominator, gate or no gate.
+    # EXPECT: 101 played with 2 draws = 99 decided; 50/99.
     row = summarize(
         leader_code="OP09-004",
         appearances=101,
@@ -222,7 +203,7 @@ def test_summarize_counts_draws_against_the_sample_gate():
         draws=2,
     )
     assert row.decided == 99
-    assert row.show_win_rate is False
+    assert row.win_rate == pytest.approx(50 / 99)
 
 
 def test_summarize_treats_a_new_leader_as_no_movement():

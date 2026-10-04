@@ -8,168 +8,197 @@ or accidentally reversed.
 
 ## What this is
 
-A free, always-current leaderboard ranking One Piece Trading Card Game leaders
-by **play rate** and **win rate**, sourced from ranked simulator ladder data,
-with the sample size shown next to every number.
+A **personal match tracker** for the One Piece TCG simulator (OPTCGSim). It
+reads the sim's per-game **combat logs**, stores every game, and shows which of
+my leaders and which matchups I actually win.
 
 Two purposes, both real:
-1. A working product.
+1. A working tool, used daily.
 2. A learning project — the owner is learning Python and building a technical
    PM portfolio. **Explaining decisions matters as much as shipping them.**
    Prefer teaching over silently doing.
 
-Full PRD and architecture design exist outside the repo. Feature codes (F1–F12),
-data decisions (D1–D3) and architecture decisions (A1–A7) below refer to them.
+**The PRD is v2.4 (4 Oct 2026)**, a claude.ai artifact outside the repo:
+https://claude.ai/artifact/Qg9GDDNk8Aa3NpxPbFNgKK. Trap codes (T1–T5),
+decisions (D1–D7) and features (F1–F14) below refer to it.
+
+History: v1 (Sep) was a public leaderboard, blocked on data access — retired.
+v2.0 read only `Player.log`; v2.3 switched to combat logs after a `Player.log`
+game was credited to the wrong opponent (see T1). Don't go back to either
+without the owner asking.
 
 ---
 
-## Current state: stage 1 of 6 complete
+## Current state
 
 | Stage | What | State |
 |---|---|---|
-| 1 | Statistics — rates, intervals, sample gate | **Done** |
-| 2 | SQLAlchemy models + `FixtureAdapter` | Next |
-| 3 | Pipeline: ingest → normalize → rollup | Not started |
-| 4 | FastAPI + Jinja2 + HTMX page | Not started |
-| 5 | Swap in a real data source | Blocked on Q1 |
-| 6 | Deploy + schedule | Not started |
+| 1 | Statistics — rates, Wilson intervals | **Done** |
+| 2–4 | Capture: parsers, store, watcher | **Done**, reworked for combat logs (v2.3) |
+| 5 | Local web page — F4–F8 (+ F12 turn-order line) | **Done** |
+| 6 | Run it for real for a week against a hand tally | Next |
 
-Only `grandline.stats` exists. No database, no data source, no website.
+Dry run on 4 Oct against the real logs (scratch DB): 13 games backfilled from
+24 Sep–2 Oct, 11 with results, 2 `unknown`, every cross-checkable result
+correct. **The owner's real database has not been created yet.**
 
 ---
 
-## Stack
+## The data
 
-Python 3.11+, **FastAPI + Jinja2 + HTMX**, SQLAlchemy, SQLite in dev →
-Postgres in prod. Server-rendered, no SPA.
+All read-only (D6). Two sources:
 
-Chosen because the page must be indexable (the F9 creator-citation growth loop
-depends on it), and because a split Python/React stack would halve the Python
-the owner writes. ~40–60 lines of JS are expected later for the F7 trend chart
-and no more. Streamlit and Django were considered and rejected.
+**Primary — combat logs**, one file per game, persistent:
+```
+<install>\CombatLogs\AutoSaved\2026-10-02T11.53.41.log   (name = local end time)
+<install>\CombatLogs\*.log                                (manual saves: results only)
+```
+`<install>` is e.g. `C:\Users\Khalid\Downloads\1.43a_Windows\Builds_Windows`
+and **moves when the sim is updated**. It is never hard-coded: it's read from
+`Mono path[0] = '…/OPTCGSim_Data/Managed'` at the top of both player logs (D7),
+or set with `combat_log_dir` in config.
+
+A combat log gives: room id, both handles, both leaders **with names**
+(`Leader is Kaido [OP17-058]` — this is F7's name source, D4), who went first
+(first `Draw 1 Don`), `Life: N` lines, and sometimes the result.
+
+**Secondary — player logs**, results only:
+```
+C:\Users\Khalid\AppData\LocalLow\Batsu\OPTCGSim\Player.log       (overwritten each launch)
+C:\Users\Khalid\AppData\LocalLow\Batsu\OPTCGSim\Player-prev.log
+```
+Only `OPB_RESULT|<outcome>` is trusted, paired with the latest
+`match ready on Room ID X` / `Joined relay X` above it.
+
+**Outcomes** (`capture/outcomes.py`, D3): `win`, `loss`, `concede` (I
+scooped → loss), `opponent_concede` (→ win), `opponent_disconnect` (→ win,
+owner's ruling 4 Oct), `unknown` (no verdict → in **neither** column).
+
+**Reading a result from a combat log** — the *first* decisive event wins:
+my/their `Concedes!`, `Opponent Has Disconnected!`, or a leader hit while its
+owner is at Life 0. "First" matters: in a real 24 Sep game the opponent
+disconnected *after* landing lethal — that's a loss, not a disconnect win.
+Whose leader was hit comes from the preceding `[attacker] … attacking` line,
+never the card id (mirror matches share one).
+
+**Traps**, each with tests:
+- **T1** `Player.log`'s HDR/PLY header can be written *after* its result. The
+  old "nearest preceding header" rule misattributed a real game. Never take
+  players/leaders from `Player.log`; pair results by room. Old code is in
+  `retired/`.
+- **T2** Every handle has an invisible U+200B before the `#`, in both logs.
+  `normalize_handle()` strips it.
+- **T3** Seat/connection order isn't me. Identify me by configured handle.
+- **T4** A combat log can stop before the result (3 of 13 real ones). Fill
+  from a manual save of the same room, then the player logs; wait
+  `result_wait_seconds` for a just-finished game; else store `unknown`.
+  Mirror-match/cut-off games stay `unknown` (owner, 4 Oct). Open hypothesis in
+  the PRD: a file that ends mid-attack on a 0-life leader = attacker won.
+  Don't implement until measured against player-log verdicts over weeks.
+- **T5** Joining, the combat log says `W6MF7PJ` but `Player.log` says
+  `Joined relay 6MF7PJ`. `same_room()` handles it.
 
 ---
 
 ## Rules that must not be broken
 
-**`grandline.stats` is pure.** No database session, no HTTP client, no
-`datetime.now()`. Anything needing those belongs in `grandline.pipeline`.
-This is what makes the layer exhaustively testable (A4).
+**Never write to any sim file** (D6). Open read-only, read, close — never hold
+a file open (on Windows that blocks the sim renaming its logs).
 
-**Three domain rules, each already encoded in a tested function.** Each one
-produces a leaderboard that looks fine and is silently wrong if reversed:
+**The store is append-only** (D2). Triggers reject UPDATE and DELETE on
+`games`. Fingerprint = hash of combat log file stem + room; UNIQUE, so
+re-scans never duplicate. Manual saves are a result *source*, never a game.
 
-1. **Play rate divides by `2 × matches`**, not matches. Every match seats two
-   leaders. `test_play_rates_across_a_format_sum_to_one` is the guard.
-2. **Draws are excluded from win rate**, not counted as losses. A draw is an
-   absence of evidence, not evidence of weakness.
-3. **Deltas are percentage points**, not percent. 50% → 52% is +2.0 points.
+**Never guess a result.** No verdict → `unknown`, counted and shown, excluded
+from win rate. Two results on one room in the player log → no answer.
 
-**Below n=100 decided games, publish no win rate at all** (F2). The row still
-appears with its play rate and game count. This gate is the product's entire
-credibility claim — do not soften it for demo purposes.
+**Pure layers:** `grandline.stats`, `parse_combat_log`, `parse_player_log` and
+`store.py` take everything as arguments. Only `watcher.py` reads the clock,
+through an injectable `clock`.
 
-**Never scrape gated statistics** (D2). OPBounty's advanced stats are a paid
-product. Scraping is a legal exposure, a fragile foundation, and it forecloses
-the partnership in D1.
+**Stored times are UTC ISO-8601** (`store._utc`). SQL compares them as text.
+
+**Schema changes are append-only too.** Add a step to `_MIGRATIONS` in
+`store.py`; never edit a shipped step (each step spells out its own outcome
+list for that reason). Now version 3: `matches` (v1, retired Player.log rows,
+kept so old DBs open), `watcher_heartbeat`, `games` (the record).
+
+**Stats domain rules:** draws excluded from win rate; deltas are percentage
+points.
+
+**No minimum sample (D5).** Raw record (`3–2`) beside raw win rate at any
+sample size. Don't reintroduce a gate without the owner asking. Render a
+0-game row as "—", not "0%".
 
 ---
 
 ## Layout
 
 ```
-src/grandline/stats/
-  intervals.py   Wilson confidence intervals
-  rates.py       play rate, win rate, deltas, sample gate, RateSummary
+src/grandline/
+  stats/             intervals.py, rates.py (pure maths)
+  capture/
+    outcomes.py      outcomes, win/loss columns, normalize_handle
+    combatlog.py     combat log -> CombatGame (players, leaders, names, turn order, result)
+    playerlog.py     player log -> results by room, install root (D7)
+    store.py         SQLite: games, heartbeat, Record, migrations
+    config.py        grandline.toml
+    watcher.py       Watcher + CLI: --once, --status, or run forever (F1)
+  web/
+    page.py          load_page (store -> PageData) + render_page (-> HTML), pure
+    server.py        stdlib http.server on 127.0.0.1:8765, read-only DB per request
+retired/             stage 2/4 Player.log parser and tailer, replaced in v2.3
 tests/
-  test_intervals.py   16 assertions
-  test_rates.py       24 assertions
-scripts/
-  preview.py     prints a fake leaderboard, stdlib only
+  fakelogs.py        builds synthetic logs in the real formats
+  test_combatlog.py, test_playerlog.py, test_store.py, test_watcher.py
+  test_intervals.py, test_rates.py, test_web.py
+scripts/preview.py   v1 fake leaderboard printer; superseded
+grandline.example.toml
 ```
 
-Source files use conventional Python module names. The owner's general
-convention is `YYYY-MM-DD-descriptive-name` for **documents**, but Python
-modules can't use it — leading digits and hyphens are not valid identifiers.
+**Test fixtures are synthetic** (`tests/fakelogs.py`). Real logs contain
+other players' handles and local paths and are never committed.
 
 ---
 
-## Verification status — read this before trusting the tests
+## Running
 
-**`pytest` has never been run on this code.** It was written in an environment
-where PyPI was blocked by egress policy (403), so pytest could not be installed.
-
-What *was* verified:
-- 40 assertions mirroring the pytest suite, run via a stdlib-only harness — all
-  passed.
-- The `wilson_interval` doctest, via stdlib `doctest` — passed.
-- Wilson values checked against **published reference tables**, not against our
-  own implementation: 10/20 → (0.2993, 0.7007), 0/10 → (0.0, 0.2775),
-  10/10 → (0.7225, 1.0).
-
-**First action in a new session: run `pip install -e ".[dev]" && pytest`.**
-Expect 26 tests passing. Report any discrepancy — it would mean the stdlib
-harness and pytest disagree, which is worth understanding, not patching over.
-
----
-
-## Q1 — the blocking open question
-
-**Does the Limitless developer API's `/games` endpoint include One Piece?**
-Public docs only show Pokémon examples. Apply for a key at
-`play.limitlesstcg.com/account/settings/api`, call `/games`, and record the
-answer here.
-
-Why it blocks: there is **no open API for the OPTCG simulator**. OPBounty (the
-ranked ladder, run by TCG Match Making, ~18.6k games/week) is the ideal source,
-but `stats.tcgmatchmaking.com/api/*` returns **401** and its advanced stats are
-a paid tier. Limitless is the fallback. If Limitless lacks One Piece, there is
-no fallback and everything depends on the OPBounty partnership conversation.
-
-**A1 is the mitigation:** all sources sit behind one `MatchSource` protocol,
-including a `FixtureAdapter` reading invented matches from JSON. Stages 2–4 can
-be built completely without resolving Q1. Only stage 5 needs a real source.
-
----
-
-## Next: stage 2
-
-Build `src/grandline/sources/base.py` and `fixture.py`, plus `models.py`.
-
-The contract every source implements:
-
-```python
-class RawMatch(BaseModel):
-    external_id: str
-    played_at: datetime
-    leader_a: str
-    leader_b: str
-    winner: str           # "a" | "b" | "draw"
-    on_the_play: str      # "a" | "b"
-    format_code: str      # "OP17"
-    season: str
-    payload: dict         # the untouched original
-
-class MatchSource(Protocol):
-    name: str
-    def fetch(self, since: datetime) -> Iterator[RawMatch]: ...
+```
+pip install -e ".[dev]"
+pytest                    # 129 tests, all passing as of 4 Oct 2026
+python -m grandline.capture.watcher --once      # backfill every combat log, exit
+python -m grandline.capture.watcher --status    # record + is it alive?
+python -m grandline.capture.watcher             # run until Ctrl+C
+python -m grandline.web                          # the page: http://127.0.0.1:8765/
 ```
 
-Tables to model (all partitioned by `season` and `format_code` from the first
-migration — season resets are a known risk):
+(`grandline-watch` isn't on PATH on this machine; use `python -m`.) Diagnostic
+log: `grandline-watcher.log` next to the database.
 
-| Table | Holds |
-|---|---|
-| `raw_ingests` | Untouched upstream payload + checksum. Append-only, never edited (A2). |
-| `matches` | One normalised row per game. |
-| `leaders` | Reference data: code, name, colour identity, set code, art URL. |
-| `leader_stats` | The rollup the page reads. Mirrors `RateSummary`. |
-| `matchups` | Pairwise rollup for F5, including the on-the-play split. |
-| `refresh_runs` | Job history. Powers F4's freshness stamp. |
+---
 
-Do **not** build the web layer first. Stages 1–3 produce no website on purpose —
-starting with the page is how these projects stall with a pretty shell and
-nothing behind it.
+## The page (stage 5)
+
+No framework: stdlib `http.server`, one route (`/`, optional `?leader=<id>`),
+bound to **127.0.0.1 only** (no login, so never expose it). Each request
+opens the DB **read-only** (`mode=ro`); only the watcher writes. Auto-refresh
+every 30s. Every DB value is HTML-escaped — opponent handles are chosen by
+other players (XSS test in `test_web.py`).
+
+Shows: watcher health (loud banner if heartbeat > 60s old — PRD risk #1),
+record + raw win rate + 95% range (D5; "—" for 0 games, never "0%"), unknown
+count, going first/second, by my leader (click to filter), matchups, last 20.
+Grouping/recent queries: `records_by()`, `recent_games()` in `store.py`.
+
+## Next: stage 6 — run it for real
+
+1. Owner runs `--once` to create the real DB (not done yet), then leaves the
+   watcher running (auto-start: README, owner's call).
+2. One week alongside a hand tally; compare. That's the north-star metric.
+3. Track: unknown rate (<5% target), and the cut-off-file hypothesis.
+
+Unconfirmed: whether combat log autosave is a setting that could be off; the
+watcher warns if a player-log result has no combat log.
 
 ---
 

@@ -1,0 +1,27 @@
+# Grand Line Meta -- watcher settings.
+# Copy this file to grandline.toml and set my_handle. grandline.toml is
+# gitignored, so your handle and paths never reach GitHub.
+
+# Your sim handle, exactly as shown in game, including the #number.
+# Required: it's how the tracker knows which player is you (trap T3).
+my_handle = "YourName#1234"
+
+# The sim's player log. The default is the standard location, which does
+# not move when the sim is updated:
+#   C:\Users\<you>\AppData\LocalLow\Batsu\OPTCGSim\Player.log
+# log_path = "C:/Users/you/AppData/LocalLow/Batsu/OPTCGSim/Player.log"
+
+# The combat log folder (one file per game). Leave unset: it is found
+# automatically from the install path in Player.log, and followed when a
+# sim update is unpacked somewhere new (PRD D7). Set it only to override.
+# combat_log_dir = "C:/Users/you/Downloads/1.43a_Windows/Builds_Windows/CombatLogs/AutoSaved"
+
+# The match database. Relative paths are relative to THIS file.
+# db_path = "grandline.db"
+
+# Seconds between checks. Must be 0.1-30 (PRD: <30s latency).
+# poll_seconds = 2.0
+
+# How long a just-finished game with no result in its combat log waits for
+# the player log's verdict before being stored as "unknown".
+# result_wait_seconds = 120
