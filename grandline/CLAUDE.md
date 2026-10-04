@@ -147,7 +147,6 @@ src/grandline/
   web/
     page.py          load_page (store -> PageData) + render_page (-> HTML), pure
     server.py        stdlib http.server on 127.0.0.1:8765, read-only DB per request
-  sources/           v1 leftover. Unused — owner to delete
 retired/             stage 2/4 Player.log parser and tailer, replaced in v2.3
 tests/
   fakelogs.py        builds synthetic logs in the real formats

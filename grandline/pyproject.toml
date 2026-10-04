@@ -16,10 +16,9 @@ description = "Personal One Piece TCG match tracker — captures OPTCGSim matche
 # dataclass slots=True, both of which need 3.10/3.11.
 requires-python = ">=3.11"
 
-# The v2 tracker runs on the standard library alone (sqlite3 included).
-# pydantic is only used by the v1 leftover `grandline.sources`; remove
-# both together.
-dependencies = ["pydantic>=2.0"]
+# The tracker runs on the standard library alone (sqlite3, http.server,
+# tomllib). No third-party packages needed at runtime.
+dependencies = []
 
 # --- Commands --------------------------------------------------------
 # `pip install -e .` puts a `grandline-watch` command on your PATH that
